@@ -1,0 +1,71 @@
+configfile: "config.yaml"
+
+from os.path import join as pjoin
+
+root = config["root"]
+in_fold = pjoin(root, "input") # "/home/prj_gralign/data/shark_genesize_analysis/bigger_input"
+out_fold = pjoin(root, "output") # "/home/prj_gralign/data/shark_genesize_analysis/output_bf"
+
+gene_sizes = [100, 250, 500, 1000, 2500, 5000, 10000]
+bf_sizes = {"100":1, "250":1, "500":1, "1000":2, "2500":2, "5000":4, "10000":4}
+
+rule run:
+    input:
+        expand(pjoin(out_fold, "{mode}.csv"),
+               mode = ["single", "multi"])
+
+rule shark:
+    input:
+        gene_seqs = pjoin(in_fold, "random_genes.{n}.fa"),
+        sample = pjoin(in_fold, "sample_10M.fastq")
+    output:
+        ssv = pjoin(out_fold, "{mode}", "{n}.ssv"),
+        fq = temp(pjoin(out_fold, "{mode}", "{n}.fq"))
+    params:
+        single_flag = lambda wildcards: "-s" if wildcards.mode == "single" else "",
+        bf = 1 # lambda wildcards: bf_sizes[wildcards.n]
+    threads: 4
+    log:
+        time = pjoin(out_fold, "{mode}", "{n}.time"),
+        out = pjoin(out_fold, "{mode}", "{n}.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} shark -r {input.gene_seqs} -1 {input.sample} -k 17 -c 0.6 -q 10 -b {params.bf} {params.single_flag} -t {threads} -o {output.fq} > {output.ssv} 2> {log.out}
+        """
+
+rule index_gtf:
+    input:
+        gtf = "{f}.gtf"
+    output:
+        gtf_db = "{f}.gtf.db"
+    shell:
+        """
+        python3 ../scripts/index_gtf.py {input.gtf}
+        """
+
+rule check_shark:
+    input:
+        ssv = pjoin(out_fold, "{mode}", "{n}.ssv"),
+        bed = pjoin(in_fold, "random_genes.{n}.truth.bed"),
+        gtf = pjoin(in_fold, "random_genes.{n}.gtf"),
+        gtf_db = pjoin(in_fold, "random_genes.{n}.gtf.db")
+    output:
+        csv = pjoin(out_fold, "{mode}", "{n}.res")
+    shell:
+        """
+        python3 ../scripts/check_shark.py {input.ssv} {input.bed} {input.gtf} 0 > {output.csv}
+        """
+
+rule combine_results:
+    input:
+        expand(pjoin(out_fold, "{{mode}}", "{n}.res"),
+               n = gene_sizes)
+    output:
+        pjoin(out_fold, "{mode}.csv")
+    params:
+        glob_path = pjoin(out_fold, "{mode}", "*.res")
+    threads: 1
+    shell:
+        """
+        bash combine.sh "{params.glob_path}" | sort -n -k 1 > {output}
+        """

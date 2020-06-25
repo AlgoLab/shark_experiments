@@ -1,0 +1,170 @@
+configfile: "config.yaml"
+
+from os.path import join as pjoin
+
+root = config["root"]
+input_fold = pjoin(root, "input")
+output_fold = pjoin(root, "output")
+
+refs = pjoin(input_fold, "chr1_17_21.fa")
+gtf = pjoin(input_fold, "chr1_17_21.gtf")
+sample = pjoin(input_fold, "sample_10M.fastq")
+sample_bed = pjoin(input_fold, "sample_10M.bed")
+
+ks = [13, 17, 23, 27, 31]
+cs = [0.2, 0.4, 0.6, 0.8]
+quals = [0, 10, 20]
+threads = 4
+runs = list(range(1, 10+1))
+n_genes = "100"
+
+rule run:
+    input:
+        pjoin(output_fold, "average_results.csv")
+
+single_args = ('sing', 'mult')
+
+rule index_fa:
+    # Index the reference
+    input:
+        refs
+    output:
+        refs + ".fai"
+    shell:
+        """
+        samtools faidx {input}
+        """
+
+rule index_gtf:
+    # Index gtf
+    input:
+        gtf
+    output:
+        gtf + ".db"
+    shell:
+        """
+        python3 ../scripts/index_gtf.py {input}
+        """
+
+rule select_genes:
+    # Select n_genes random genes from the input gtf
+    # We use these as genes of interest for the run
+    input:
+        anno = gtf,
+        anno_db = gtf + ".db"
+    output:
+        pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.gtf")
+    params:
+        n_genes
+    shell:
+        """
+        python3 extract_random_genes.py {input.anno} {n_genes} > {output}
+        """
+
+rule add_tid_to_gtf:
+    # Add transcript_id to gtf attributes
+    input:
+        pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.gtf")
+    output:
+        pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.tid.gtf")
+    shell:
+        """
+        awk '{{ if ($0 ~ "transcript_id") print $0; else print $0" transcript_id \\"\\";"; }}' {input} > {output}
+        """
+
+rule gtf_to_bed:
+    # Converts gtf to bed and extract only the genes
+    input:
+        gtf = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.tid.gtf")
+    output:
+        bed = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.genes.bed")
+    shell:
+        """
+        gtf2bed < {input.gtf} | grep -P "\tgene\t" > {output.bed}
+        """
+
+rule extract_selected_genes:
+    # Extract gene's sequence using fastaFromBed
+    input:
+        fa = refs,
+        fa_ids = refs + ".fai",
+        bed = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.genes.bed")
+    output:
+        fagenes = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.fa")
+    shell:
+        """
+        fastaFromBed -name -fi {input.fa} -bed {input.bed} | fold -w 80 > {output.fagenes}
+        """
+
+rule extract_truth:
+    # Extract reads sequenced from the genes of interest in this run
+    input:
+        gtf = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.gtf"),
+        bed = sample_bed
+    output:
+        bed = pjoin(input_fold, "run_{run}", "truth.bed")
+    shell:
+        """
+        bash extract_truth.sh {input.gtf} {input.bed} > {output.bed}
+        """
+
+rule shark:
+    # Run shark
+    input:
+        fagenes = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.fa"),
+        fq = sample
+    output:
+        ssv = pjoin(output_fold, "run_{run}", "rf.k{k}.c{c}.q{q}.{single}.ssv"),
+        fq = temp(pjoin(output_fold, "run_{run}", "rf.k{k}.c{c}.q{q}.{single}.fq"))
+    params:
+        k = "{k}",
+        c = "{c}",
+        q = "{q}",
+        single_arg = lambda wildcards: "-s" if wildcards.single == 'sing' else ''
+    log:
+        time = pjoin(output_fold, "run_{run}", "rf.k{k}.c{c}.q{q}.{single}.time"),
+        out = pjoin(output_fold, "run_{run}", "rf.k{k}.c{c}.q{q}.{single}.log")
+    threads:
+        threads
+    shell:
+        """
+        /usr/bin/time -vo {log.time} shark {params.single_arg} -t {threads} -r {input.fagenes} -1 {input.fq} -k {params.k} -c {params.c} -q {params.q} -b 1 -o {output.fq} > {output.ssv} 2> {log.out}
+        """
+
+rule check_shark:
+    input:
+        ssv = pjoin(output_fold, "run_{run}", "rf.k{k}.c{c}.q{q}.{single}.ssv"),
+        bed = pjoin(input_fold, "run_{run}", "truth.bed"),
+        gtf = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.gtf"),
+        gtf_index = pjoin(input_fold, "run_{run}", n_genes + "_randomgenes.gtf.db")
+    output:
+        csv = pjoin(output_fold, "run_{run}", "rf.k{k}.c{c}.q{q}.{single}.results.csv")
+    shell:
+        """
+        python3 ../scripts/check_shark.py {input.ssv} {input.bed} {input.gtf} 0 > {output.csv}
+        """
+
+rule combine_results:
+    input:
+        expand(pjoin(output_fold, "run_{{run}}", "rf.k{k}.c{c}.q{q}.{single}.results.csv"),
+               k = ks,
+               c = cs,
+               q = quals,
+               single = single_args)
+    output:
+        pjoin(output_fold, "run_{run}.res")
+    shell:
+        """
+        bash combine_results.sh {input} > {output}
+        """
+
+rule comp_average:
+    input:
+        expand(pjoin(output_fold, "run_{run}.res"),
+               run = runs)
+    output:
+        pjoin(output_fold, "average_results.csv")
+    shell:
+        """
+        python3 average_runs.py {input} > {output}
+        """

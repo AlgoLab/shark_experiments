@@ -1,0 +1,875 @@
+configfile: "config.yaml"
+
+from os.path import join as pjoin
+
+root = config["root"]
+
+input_fold = pjoin(root, "input")
+output_fold = pjoin(root, "output")
+
+reference = pjoin(input_fold, "Homo_sapiens.GRCh37.dna.primary_assembly.fa")
+full_annotation = pjoin(input_fold, "Homo_sapiens.GRCh37.87.gtf")
+transcripts = pjoin(input_fold, "Homo_sapiens.GRCh37.cdna.all.fa")
+
+rtpcr_genes_csv = pjoin(input_fold, "RTPCR_genes.csv")
+rtpcr_genes_list = pjoin(input_fold, "RTPCR_genes_list.txt")
+rtpcr_annotation = full_annotation[:-4] + ".rtpcr.gtf"
+rtpcr_seqs = pjoin(input_fold, "rtpcr_genes.seqs.fa")
+
+rtpcr_genes = []
+for line in open(rtpcr_genes_list, 'r'):
+    rtpcr_genes.append(line.strip("\n"))
+
+ctrl_samples = ["SRR1513329", "SRR1513330", "SRR1513331"]
+kd_samples = ["SRR1513332", "SRR1513333", "SRR1513334"]
+star_genomeSAsparseD = [1,2,4,8]
+
+# Initial files:
+# input_fold/
+# |-- Homo_sapiens.GRCh37.dna.primary_assembly.fa
+# |-- Homo_sapiens.GRCh37.87.gtf
+# |-- Homo_sapiens.GRCh37.cdna.all.fa
+# |-- RTPCR_genes.csv (from suppa2 supplementary xls, modified by searching missing genes in ensembl)
+# |-- RTPCR_genes_list.txt (from RTPCR_genes.csv via 2 cuts)
+# '-- samples
+#     |-- SRR1513329_1.fastq.gz
+#     |-- SRR1513329_2.fastq.gz
+#     |-- SRR1513330_1.fastq.gz
+#     |-- SRR1513330_2.fastq.gz
+#     |-- SRR1513331_1.fastq.gz
+#     |-- SRR1513331_2.fastq.gz
+#     |-- SRR1513332_1.fastq.gz
+#     |-- SRR1513332_2.fastq.gz
+#     |-- SRR1513333_1.fastq.gz
+#     |-- SRR1513333_2.fastq.gz
+#     |-- SRR1513334_1.fastq.gz
+#     '-- SRR1513334_2.fastq.gz
+
+rule run:
+    input:
+        ### ORIGINAL ###
+        # rmats
+        expand(pjoin(output_fold, "rMATS", "SAD{sparsity}", "fromGTF.SE.txt"),
+               sparsity = star_genomeSAsparseD),
+        # spladder
+        expand(pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest", "testing", "test_results_C3_exon_skip.tsv"),
+               sparsity = star_genomeSAsparseD),
+        # suppa2
+        pjoin(output_fold, "suppa2", "CTRL_KD.dpsi"),
+
+        ### SHARKED ###
+        # rmats
+        expand(pjoin(output_fold, "sharked_rMATS", "SAD{sparsity}", "fromGTF.SE.txt"),
+               sparsity = star_genomeSAsparseD),
+        # spladder
+        expand(pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest", "testing", "test_results_C3_exon_skip.tsv"),
+               sparsity = star_genomeSAsparseD),
+        # suppa2
+        pjoin(output_fold, "sharked_suppa2", "CTRL_KD.dpsi")
+    output:
+        res005 = pjoin(output_fold, "results.005.txt"),
+        res100 = pjoin(output_fold, "results.100.txt"),
+        res = pjoin(output_fold, "resources.csv")
+    params:
+        root
+    shell:
+        """
+        python3 check_results.py {params} 0.05> {output.res005}
+        python3 check_results.py {params} 1.00 > {output.res100}
+        python3 check_timeram.py {params} > {output.res}
+        """
+
+
+#########################
+##### PREPROCESSING #####
+#########################
+# FIXME: to create the RTPCR we first split it and then we merge the files. We can do it just grepping the gene names
+rule split_gtf:
+    # Split gtf for ASGAL
+    input:
+        gtf = full_annotation
+    output:
+        gene_gtf = pjoin(input_fold, "rtpcr_genes", "{gene_idx}.gtf")
+    params:
+        gene = "{gene_idx}"
+    threads: 1
+    shell:
+        """
+        grep "\"{params.gene}\"" {input.gtf} > {output.gene_gtf}
+        """
+
+rule index_gene_gtf:
+    input:
+        pjoin(input_fold, "rtpcr_genes", "{gene_idx}.gtf")
+    output:
+        pjoin(input_fold, "rtpcr_genes", "{gene_idx}.gtf.db")
+    threads: 1
+    shell:
+        """
+        python3 ../scripts/index_gtf.py {input}
+        """
+
+# FIXME: check if sort works as expected
+rule create_rtpcr_annotation:
+    # Combine rtpcr gtfs
+    input:
+        expand(pjoin(input_fold, "rtpcr_genes", "{gene_idx}.gtf"),
+               gene_idx = rtpcr_genes)
+    output:
+        rtpcr_annotation
+    threads: 1
+    shell:
+        """
+        cat {input} | sort -s -k1,1V > {output}
+        """
+
+# rule index_fasta:
+#     # Index reference
+#     input:
+#         reference
+#     output:
+#         reference + ".fai"
+#     threads: 1
+#     shell:
+#         """
+#         samtools faidx {input}
+#         """
+
+# rule split_fasta:
+#     # Splits reference in chromosome
+#     input:
+#         fa = reference,
+#         fa_idx = reference + ".fai"
+#     output:
+#         pjoin(input_fold, "chr{chr_idx}.fa")
+#     params:
+#         chr = "{chr_idx}"
+#     threads: 1
+#     shell:
+#         """
+#         samtools faidx {input.fa} {params.chr} > {output}
+#         """
+
+# rule link_fasta:
+#     # Links the chromosome fasta of the gene to the gene reference (ASGAL)
+#     input:
+#         gene_gtf = pjoin(input_fold, "rtpcr_genes", "{gene_idx}.gtf"),
+#         refs = expand(pjoin(input_fold, "chr{chr_idx}.fa"), chr_idx = list(range(1,23)) + ["X", "Y"])
+#     output:
+#         gene_fa = pjoin(input_fold, "rtpcr_genes", "{gene_idx}.fa")
+#     threads: 1
+#     shell:
+#         """
+#         chr=$(head -1 {input.gene_gtf} | cut -f 1) ; ln -s {input_fold}/chr${{chr}}.fa {output.gene_fa}
+#         """
+
+rule fix_transcripts_for_suppa:
+    # Removes version from transcript name
+    input:
+        transcripts
+    output:
+        transcripts + ".fixed4suppa.fa"
+    threads: 1
+    shell:
+        """
+        python3 fix_transcript_headers.py {input} > {output}
+        """
+
+rule extract_rtpcr_seqs:
+    input:
+        fa = reference,
+        gtf = rtpcr_annotation
+    output:
+        rtpcr_seqs
+    params:
+        flank_size = 150
+    threads: 1
+    shell:
+        """
+        bash ../scripts/extract_gene_seqs.sh {input.fa} {input.gtf} {params.flank_size} > {output}
+        """
+
+################
+##### STAR #####
+################
+rule star_index:
+    input:
+        fa = reference,
+        gtf = full_annotation
+    output:
+        star_sa = pjoin(input_fold, "star_index_SAD{sparsity}", "SA")
+    params:
+        star_index_fold = pjoin(input_fold, "star_index_SAD{sparsity}"),
+        star_tmp_fold = pjoin(input_fold, "star_index_SAD{sparsity}_tmp"),
+        genomeSAsparseD = "{sparsity}"
+    threads: 4
+    log:
+        time = pjoin(input_fold, "star_index_SAD{sparsity}.time"),
+        out = pjoin(input_fold, "star_index_SAD{sparsity}.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} STAR --runThreadN {threads} --runMode genomeGenerate --outTmpDir {params.star_tmp_fold} --genomeSAsparseD {params.genomeSAsparseD} --genomeDir {params.star_index_fold} --genomeFastaFiles {input.fa} --sjdbGTFfile {input.gtf} &> {log.out}
+        """
+
+rule star_align:
+    input:
+        star_sa = pjoin(input_fold, "star_index_SAD{sparsity}", "SA"),
+        fq_1 = pjoin(input_fold, "samples", "{sample_idx}_1.fastq.gz"),
+        fq_2 = pjoin(input_fold, "samples", "{sample_idx}_2.fastq.gz")
+    output:
+        star_bam = pjoin(output_fold, "STAR", "SAD{sparsity}", "{sample_idx}", "Aligned.sortedByCoord.out.bam")
+    params:
+        star_index_fold = pjoin(input_fold, "star_index_SAD{sparsity}"),
+        bam_prefix = pjoin(output_fold, "STAR", "SAD{sparsity}", "{sample_idx}", "")
+    threads: 4
+    log:
+        time = pjoin(output_fold, "STAR", "SAD{sparsity}", "{sample_idx}.time"),
+        out = pjoin(output_fold, "STAR", "SAD{sparsity}", "{sample_idx}.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} STAR --genomeDir {params.star_index_fold} --readFilesIn {input.fq_1} {input.fq_2} --twopassMode Basic --outSAMstrandField intronMotif --alignIntronMax 500000 --outSAMattributes NH HI NM MD AS XS --outSAMtype BAM SortedByCoordinate --outFileNamePrefix {params.bam_prefix} --readFilesCommand zcat --runThreadN {threads} &> {log.out}
+        samtools index {output}
+        """
+
+##################
+##### SALMON #####
+##################
+rule salmon_index:
+    # Salmon index step (for SUPPA2)
+    input:
+        fa = transcripts + ".fixed4suppa.fa"
+    output:
+        index = pjoin(input_fold, "salmon_index", "mphf.bin")
+    params:
+        index_prefix = pjoin(input_fold, "salmon_index", "")
+    threads: 4
+    log:
+        time = pjoin(input_fold, "salmon_index.time"),
+        out = pjoin(input_fold, "salmon_index.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} salmon index -p {threads} -t {input.fa} -i {params.index_prefix} &> {log.out}
+        """
+
+rule salmon_quant:
+    # Salmon quantification (for SUPPA2)
+    input:
+        index = pjoin(input_fold, "salmon_index", "mphf.bin"),
+        fq_1 = pjoin(input_fold, "samples", "{sample_idx}_1.fastq.gz"),
+        fq_2 = pjoin(input_fold, "samples", "{sample_idx}_2.fastq.gz")
+    output:
+        quant = pjoin(output_fold, "salmon", "{sample_idx}", "quant.sf"),
+        sam = pjoin(output_fold, "salmon", "{sample_idx}", "quasialigns.sam")
+    params:
+        index_prefix = pjoin(input_fold, "salmon_index", ""),
+        out_prefix = pjoin(output_fold, "salmon", "{sample_idx}", "")
+    threads: 4
+    log:
+        time = pjoin(output_fold, "salmon", "{sample_idx}.time"),
+        out = pjoin(output_fold, "salmon", "{sample_idx}.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} salmon quant -p {threads} -l A -i {params.index_prefix} -1 {input.fq_1} -2 {input.fq_2} -o {params.out_prefix} --no-version-check --validateMappings --writeMappings={output.sam} &> {log.out}
+        """
+# /usr/bin/time -vo {log.time} salmon quant -p {threads} -l ISF -i {params.index_prefix} -1 {input.fq_1} -2 {input.fq_2} -o {params.out_prefix} --writeMappings={output.sam} --writeUnmappedNames &> {log.out}
+
+rule salmon_sam_to_bam:
+    input:
+        sam = pjoin(output_fold, "salmon", "{sample_idx}", "quasialigns.sam")
+    output:
+        bam = pjoin(output_fold, "salmon", "{sample_idx}", "quasialigns.bam"),
+        bai = pjoin(output_fold, "salmon", "{sample_idx}", "quasialigns.bam.bai"),
+    threads: 4
+    shell:
+        """
+        samtools view -bS {input.sam} | samtools sort - > {output.bam}
+        samtools index {output.bam}
+        """
+
+##################
+##### SUPPA2 #####
+##################
+rule suppa_compute_tmp:
+    # Extracts TPM values from Salmon output
+    input:
+        salmon_quants = expand(pjoin(output_fold, "salmon", "{sample_idx}", "quant.sf"),
+                               sample_idx = ctrl_samples + kd_samples)
+    output:
+        iso_tmp = pjoin(output_fold, "suppa2", "iso_tmp.txt")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "suppa2", "iso_tmp.time"),
+        out = pjoin(output_fold, "suppa2", "iso_tmp.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} multipleFieldSelection.py -i {input.salmon_quants} -k 1 -f 4 -o {output.iso_tmp} &> {log.out}
+        """
+
+# FIXME: gtf was "formatted", ie only exons
+rule suppa_generate_events:
+    # Generates events from annotation
+    input:
+        gtf = full_annotation
+    output:
+        ioe_allevents = pjoin(output_fold, "suppa2", "all_events.ioe")
+    params:
+        ioe_fold =  pjoin(output_fold, "suppa2", "ioe")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "suppa2", "ioe.time"),
+        out = pjoin(output_fold, "suppa2", "ioe.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} suppa.py generateEvents -i {input.gtf} -o {params.ioe_fold} -e SE SS MX RI FL -f ioe &> {log.out}
+        awk 'FNR==1 && NR==1 {{print}} /^seqname/ {{next}} 1 {{print}}' {params.ioe_fold}*ioe > {output.ioe_allevents}
+        """
+
+rule suppa_psiperevent:
+    # Run SUPPA for getting the psi values of the events
+    input:
+        iso_tmp = pjoin(output_fold, "suppa2", "iso_tmp.txt"),
+        ioe_allevents = pjoin(output_fold, "suppa2", "all_events.ioe")
+    output:
+        psi = pjoin(output_fold, "suppa2", "events.psi")
+    params:
+        psi_prefix = pjoin(output_fold, "suppa2", "events")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "suppa2", "psi.time"),
+        out = pjoin(output_fold, "suppa2", "psi.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} suppa.py psiPerEvent -i {input.ioe_allevents} -e {input.iso_tmp} -o {params.psi_prefix} &> {log.out}
+        """
+
+rule suppa_split_tpm:
+    # Split the TPM files between the 2 conditions
+    input:
+        iso_tmp = pjoin(output_fold, "suppa2", "iso_tmp.txt")
+    output:
+        ctrl_iso_tmp = pjoin(output_fold, "suppa2", "iso_tmp.ctrl.txt"),
+        kd_iso_tmp = pjoin(output_fold, "suppa2", "iso_tmp.kd.txt")
+    params:
+        ctrl_list = ",".join(ctrl_samples),
+	kd_list = ",".join(kd_samples)
+    threads: 1
+    shell:
+        """
+        Rscript split_file.R {input.iso_tmp} {params.ctrl_list} {params.kd_list} {output.ctrl_iso_tmp} {output.kd_iso_tmp}
+        """
+
+rule suppa_split_psi:
+    # Split the PSI files between the 2 conditions
+    input:
+        psi = pjoin(output_fold, "suppa2", "events.psi")
+    output:
+        ctrl_psi = pjoin(output_fold, "suppa2", "events.ctrl.psi"),
+        kd_psi = pjoin(output_fold, "suppa2", "events.kd.psi")
+    params:
+        ctrl_list = ",".join(ctrl_samples),
+	kd_list = ",".join(kd_samples)
+    threads: 1
+    shell:
+        """
+        Rscript split_file.R {input.psi} {params.ctrl_list} {params.kd_list} {output.ctrl_psi} {output.kd_psi}
+        """
+
+rule suppa_dpsi:
+    # Run SUPPA differential analysis
+    input:
+        ioe_allevents = pjoin(output_fold, "suppa2", "all_events.ioe"),
+        ctrl_iso_tmp = pjoin(output_fold, "suppa2", "iso_tmp.ctrl.txt"),
+        kd_iso_tmp = pjoin(output_fold, "suppa2", "iso_tmp.kd.txt"),
+        ctrl_psi = pjoin(output_fold, "suppa2", "events.ctrl.psi"),
+        kd_psi = pjoin(output_fold, "suppa2", "events.kd.psi")
+    output:
+        dpsi = pjoin(output_fold, "suppa2", "CTRL_KD.dpsi")
+    params:
+        dpsi_prefix = pjoin(output_fold, "suppa2", "CTRL_KD")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "suppa2", "dpsi.time"),
+        out = pjoin(output_fold, "suppa2", "dpsi.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} suppa.py diffSplice -m empirical -i {input.ioe_allevents} -e {input.ctrl_iso_tmp} {input.kd_iso_tmp} -p {input.ctrl_psi} {input.kd_psi} -o {params.dpsi_prefix} &> {log.out}
+        """
+
+
+#################
+##### RMATS #####
+#################
+rule prepare_rmats_ctrlbam_list:
+    input:
+        expand(pjoin(output_fold, "STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = ctrl_samples)
+    output:
+        pjoin(output_fold, "STAR", "SAD{sparsity}", "ctrlbam_list.rmats.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /,/g' > {output}
+        """
+
+rule prepare_rmats_kdbam_list:
+    input:
+        expand(pjoin(output_fold, "STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = kd_samples)
+    output:
+        pjoin(output_fold, "STAR", "SAD{sparsity}", "kdbam_list.rmats.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /,/g' > {output}
+        """
+
+rule rmats:
+    input:
+        gtf = full_annotation,
+        ctrlbam_list = pjoin(output_fold, "STAR", "SAD{sparsity}", "ctrlbam_list.rmats.txt"),
+        kdbam_list = pjoin(output_fold, "STAR", "SAD{sparsity}", "kdbam_list.rmats.txt")
+    output:
+        pjoin(output_fold, "rMATS", "SAD{sparsity}", "fromGTF.SE.txt")
+    threads: 4
+    params:
+        out_fold = pjoin(output_fold, "rMATS", "SAD{sparsity}"),
+        tmp_fold = pjoin(output_fold, "rMATS", "SAD{sparsity}_tmp")
+    log:
+        out = pjoin(output_fold, "rMATS", "SAD{sparsity}", "rMATS.log"),
+        time = pjoin(output_fold, "rMATS", "SAD{sparsity}", "rMATS.time")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} rmats.py --b1 {input.ctrlbam_list} --b2 {input.kdbam_list} --gtf {input.gtf} --readLength 101 -t paired --od {params.out_fold} --nthread {threads} --tmp {params.tmp_fold} &> {log.out}
+        """
+
+####################
+##### SPLADDER #####
+####################
+
+rule prepare_spladder_ctrlbam_list:
+    # Creates the file containing the paths to ctrl bams (format required by spladder)
+    input:
+        expand(pjoin(output_fold, "STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = ctrl_samples)
+    output:
+        pjoin(output_fold, "STAR", "SAD{sparsity}", "ctrlbam_list.spladder.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /\\n/g' > {output}
+        """
+
+rule prepare_spladder_kdbam_list:
+    # Creates the file containing the paths to kd bams (format required by spladder)
+    input:
+        expand(pjoin(output_fold, "STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = kd_samples)
+    output:
+        pjoin(output_fold, "STAR", "SAD{sparsity}", "kdbam_list.spladder.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /\\n/g' > {output}
+        """
+
+rule prepare_spladder_bam_list:
+    # Creates the file containing the paths to all bams (format required by spladder)
+    input:
+        expand(pjoin(output_fold, "STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = ctrl_samples + kd_samples)
+    output:
+        pjoin(output_fold, "STAR", "SAD{sparsity}", "bam_list.spladder.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /\\n/g' > {output}
+        """
+
+rule spladder_difftest_step1:
+    # Runs spladder on all bams for differential analysis - Step 1
+    input:
+        gtf = full_annotation,
+        bam_list = pjoin(output_fold, "STAR", "SAD{sparsity}", "bam_list.spladder.txt")
+    output:
+        pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest", "merge_graphs_exon_skip_C3.pickle")
+    params:
+        out_fold = pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest")
+    threads: 4
+    log:
+        out = pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest.1.log"),
+        time = pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest.1.time")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} spladder build --bams {input.bam_list} --annotation {input.gtf} --outdir {params.out_fold} --parallel {threads} -n 101 --output-txt &> {log.out}
+        """
+
+rule spladder_difftest_step2:
+    # Runs spladder on all bams for differential analysis - Step 2
+    input:
+        spladder_step1_out = pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest", "merge_graphs_exon_skip_C3.pickle"),
+        gtf = full_annotation,
+        ctrlbam_list = pjoin(output_fold, "STAR", "SAD{sparsity}", "ctrlbam_list.spladder.txt"),
+        kdbam_list = pjoin(output_fold, "STAR", "SAD{sparsity}", "kdbam_list.spladder.txt")
+    output:
+        pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest", "testing", "test_results_C3_exon_skip.tsv")
+    params:
+        out_fold = pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest")
+    threads: 4
+    log:
+        out = pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest.2.log"),
+        time = pjoin(output_fold, "spladder", "SAD{sparsity}", "difftest.2.time")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} spladder test --conditionA {input.ctrlbam_list} --conditionB {input.kdbam_list} --outdir {params.out_fold} --parallel {threads} -n 101 &>> {log.out}
+        """
+
+
+#########################################################################################################################################################
+#########################################################################################################################################################
+#########################################################################################################################################################
+
+
+#################
+##### SHARK #####
+#################
+
+rule shark:
+    input:
+        gene_seqs = rtpcr_seqs,
+        fq_1 = pjoin(input_fold, "samples", "{sample_idx}_1.fastq.gz"),
+        fq_2 = pjoin(input_fold, "samples", "{sample_idx}_2.fastq.gz")
+    output:
+        ssv = pjoin(output_fold, "shark", "{sample_idx}.ssv"),
+        out_fq_1 = pjoin(output_fold, "shark", "{sample_idx}_1.fq"),
+        out_fq_2 = pjoin(output_fold, "shark", "{sample_idx}_2.fq")
+    log:
+        out = pjoin(output_fold, "shark", "{sample_idx}.assoc.log"),
+        time = pjoin(output_fold, "shark", "{sample_idx}.assoc.time")
+    threads: 4
+    shell:
+        """
+        /usr/bin/time -vo {log.time} shark -r {input.gene_seqs} -1 {input.fq_1} -2 {input.fq_2} -k 17 -c 0.6 -q 10 -b 1 -s -t {threads} -o {output.out_fq_1} -p {output.out_fq_2} > {output.ssv} 2> {log.out}
+        """
+
+rule gzip_shark_fq_1:
+    input:
+        pjoin(output_fold, "shark", "{sample_idx}_1.fq")
+    output:
+        pjoin(output_fold, "shark", "{sample_idx}_1.fq.gz")
+    shell:
+        """
+        gzip {input}
+        """
+
+rule gzip_shark_fq_2:
+    input:
+        pjoin(output_fold, "shark", "{sample_idx}_2.fq")
+    output:
+        pjoin(output_fold, "shark", "{sample_idx}_2.fq.gz")
+    shell:
+        """
+        gzip {input}
+        """
+
+
+########################
+##### SHARKED STAR #####
+########################
+
+# Index is already in unsharked version
+
+rule sharked_star_align:
+    input:
+        star_sa = pjoin(input_fold, "star_index_SAD{sparsity}", "SA"),
+        fq_1 = pjoin(output_fold, "shark", "{sample_idx}_1.fq.gz"),
+        fq_2 = pjoin(output_fold, "shark", "{sample_idx}_2.fq.gz")
+    output:
+        star_bam = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "{sample_idx}", "Aligned.sortedByCoord.out.bam")
+    params:
+        star_index_fold = pjoin(input_fold, "star_index_SAD{sparsity}"),
+        bam_prefix = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "{sample_idx}", "")
+    threads: 4
+    log:
+        time = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "{sample_idx}.time"),
+        out = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "{sample_idx}.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} STAR --genomeDir {params.star_index_fold} --readFilesIn {input.fq_1} {input.fq_2} --twopassMode Basic --outSAMstrandField intronMotif --alignIntronMax 500000 --outSAMattributes NH HI NM MD AS XS --outSAMtype BAM SortedByCoordinate --outFileNamePrefix {params.bam_prefix} --readFilesCommand zcat --runThreadN {threads} &> {log.out}
+        samtools index {output}
+        """
+
+
+##########################
+##### SHARKED_SALMON #####
+##########################
+
+# Index is already in unsharked version
+
+rule sharked_salmon_quant:
+    # Salmon quantification (for SUPPA2)
+    input:
+        index = pjoin(input_fold, "salmon_index", "mphf.bin"),
+        fq_1 = pjoin(output_fold, "shark", "{sample_idx}_1.fq.gz"),
+        fq_2 = pjoin(output_fold, "shark", "{sample_idx}_2.fq.gz")
+    output:
+        quant = pjoin(output_fold, "sharked_salmon", "{sample_idx}", "quant.sf"),
+        sam = pjoin(output_fold, "sharked_salmon", "{sample_idx}", "quasialigns.sam")
+    params:
+        index_prefix = pjoin(input_fold, "salmon_index", ""),
+        out_prefix = pjoin(output_fold, "sharked_salmon", "{sample_idx}", "")
+    threads: 4
+    log:
+        time = pjoin(output_fold, "sharked_salmon", "{sample_idx}.time"),
+        out = pjoin(output_fold, "sharked_salmon", "{sample_idx}.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} salmon quant -p {threads} -l A -i {params.index_prefix} -1 {input.fq_1} -2 {input.fq_2} -o {params.out_prefix} --no-version-check --validateMappings --writeMappings={output.sam} &> {log.out}
+        """
+
+rule sharked_salmon_sam_to_bam:
+    input:
+        sam = pjoin(output_fold, "sharked_salmon", "{sample_idx}", "quasialigns.sam")
+    output:
+        bam = pjoin(output_fold, "sharked_salmon", "{sample_idx}", "quasialigns.bam"),
+        bai = pjoin(output_fold, "sharked_salmon", "{sample_idx}", "quasialigns.bam.bai"),
+    threads: 4
+    shell:
+        """
+        samtools view -bS {input.sam} | samtools sort - > {output.bam}
+        samtools index {output.bam}
+        """
+
+##########################
+##### SHARKED_SUPPA2 #####
+##########################
+rule sharked_suppa_compute_tmp:
+    # Extracts TPM values from Salmon output
+    input:
+        salmon_quants = expand(pjoin(output_fold, "sharked_salmon", "{sample_idx}", "quant.sf"),
+                               sample_idx = ctrl_samples + kd_samples)
+    output:
+        iso_tmp = pjoin(output_fold, "sharked_suppa2", "iso_tmp.txt")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "sharked_suppa2", "iso_tmp.time"),
+        out = pjoin(output_fold, "sharked_suppa2", "iso_tmp.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} multipleFieldSelection.py -i {input.salmon_quants} -k 1 -f 4 -o {output.iso_tmp} &> {log.out}
+        """
+
+# FIXME: gtf was "formatted", ie only exons
+rule sharked_suppa_generate_events:
+    # Generates events from annotation
+    input:
+        gtf = full_annotation
+    output:
+        ioe_allevents = pjoin(output_fold, "sharked_suppa2", "all_events.ioe")
+    params:
+        ioe_fold =  pjoin(output_fold, "sharked_suppa2", "ioe")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "sharked_suppa2", "ioe.time"),
+        out = pjoin(output_fold, "sharked_suppa2", "ioe.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} suppa.py generateEvents -i {input.gtf} -o {params.ioe_fold} -e SE SS MX RI FL -f ioe &> {log.out}
+        awk 'FNR==1 && NR==1 {{print}} /^seqname/ {{next}} 1 {{print}}' {params.ioe_fold}*ioe > {output.ioe_allevents}
+        """
+
+rule sharked_suppa_psiperevent:
+    # Run SUPPA for getting the psi values of the events
+    input:
+        iso_tmp = pjoin(output_fold, "sharked_suppa2", "iso_tmp.txt"),
+        ioe_allevents = pjoin(output_fold, "sharked_suppa2", "all_events.ioe")
+    output:
+        psi = pjoin(output_fold, "sharked_suppa2", "events.psi")
+    params:
+        psi_prefix = pjoin(output_fold, "sharked_suppa2", "events")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "sharked_suppa2", "psi.time"),
+        out = pjoin(output_fold, "sharked_suppa2", "psi.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} suppa.py psiPerEvent -i {input.ioe_allevents} -e {input.iso_tmp} -o {params.psi_prefix} &> {log.out}
+        """
+
+rule sharked_suppa_split_tpm:
+    # Split the TPM files between the 2 conditions
+    input:
+        iso_tmp = pjoin(output_fold, "sharked_suppa2", "iso_tmp.txt")
+    output:
+        ctrl_iso_tmp = pjoin(output_fold, "sharked_suppa2", "iso_tmp.ctrl.txt"),
+        kd_iso_tmp = pjoin(output_fold, "sharked_suppa2", "iso_tmp.kd.txt")
+    params:
+        ctrl_list = ",".join(ctrl_samples),
+	kd_list = ",".join(kd_samples)
+    threads: 1
+    shell:
+        """
+        Rscript split_file.R {input.iso_tmp} {params.ctrl_list} {params.kd_list} {output.ctrl_iso_tmp} {output.kd_iso_tmp}
+        """
+
+rule sharked_suppa_split_psi:
+    # Split the PSI files between the 2 conditions
+    input:
+        psi = pjoin(output_fold, "sharked_suppa2", "events.psi")
+    output:
+        ctrl_psi = pjoin(output_fold, "sharked_suppa2", "events.ctrl.psi"),
+        kd_psi = pjoin(output_fold, "sharked_suppa2", "events.kd.psi")
+    params:
+        ctrl_list = ",".join(ctrl_samples),
+	kd_list = ",".join(kd_samples)
+    threads: 1
+    shell:
+        """
+        Rscript split_file.R {input.psi} {params.ctrl_list} {params.kd_list} {output.ctrl_psi} {output.kd_psi}
+        """
+
+rule sharked_suppa_dpsi:
+    # Run SUPPA differential analysis
+    input:
+        ioe_allevents = pjoin(output_fold, "sharked_suppa2", "all_events.ioe"),
+        ctrl_iso_tmp = pjoin(output_fold, "sharked_suppa2", "iso_tmp.ctrl.txt"),
+        kd_iso_tmp = pjoin(output_fold, "sharked_suppa2", "iso_tmp.kd.txt"),
+        ctrl_psi = pjoin(output_fold, "sharked_suppa2", "events.ctrl.psi"),
+        kd_psi = pjoin(output_fold, "sharked_suppa2", "events.kd.psi")
+    output:
+        dpsi = pjoin(output_fold, "sharked_suppa2", "CTRL_KD.dpsi")
+    params:
+        dpsi_prefix = pjoin(output_fold, "sharked_suppa2", "CTRL_KD")
+    threads: 1
+    log:
+        time = pjoin(output_fold, "sharked_suppa2", "dpsi.time"),
+        out = pjoin(output_fold, "sharked_suppa2", "dpsi.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} suppa.py diffSplice -m empirical -i {input.ioe_allevents} -e {input.ctrl_iso_tmp} {input.kd_iso_tmp} -p {input.ctrl_psi} {input.kd_psi} -o {params.dpsi_prefix} &> {log.out}
+        """
+
+#########################
+##### SHARKED RMATS #####
+#########################
+rule prepare_sharked_rmats_ctrlbam_list:
+    input:
+        expand(pjoin(output_fold, "sharked_STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = ctrl_samples)
+    output:
+        pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "ctrlbam_list.rmats.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /,/g' > {output}
+        """
+
+rule prepare_sharked_rmats_kdbam_list:
+    input:
+        expand(pjoin(output_fold, "sharked_STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = kd_samples)
+    output:
+        pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "kdbam_list.rmats.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /,/g' > {output}
+        """
+
+rule sharked_rmats:
+    input:
+        gtf = full_annotation,
+        ctrlbam_list = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "ctrlbam_list.rmats.txt"),
+        kdbam_list = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "kdbam_list.rmats.txt")
+    output:
+        pjoin(output_fold, "sharked_rMATS", "SAD{sparsity}", "fromGTF.SE.txt")
+    threads: 4
+    params:
+        out_fold = pjoin(output_fold, "sharked_rMATS", "SAD{sparsity}"),
+        tmp_fold = pjoin(output_fold, "rMATS", "SAD{sparsity}_tmp")
+    log:
+        out = pjoin(output_fold, "sharked_rMATS", "SAD{sparsity}", "sharked_rMATS.log"),
+        time = pjoin(output_fold, "sharked_rMATS", "SAD{sparsity}", "sharked_rMATS.time")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} rmats.py --b1 {input.ctrlbam_list} --b2 {input.kdbam_list} --gtf {input.gtf} --readLength 101 -t paired --od {params.out_fold} --nthread {threads} --tmp {params.tmp_fold} &> {log.out}
+        """
+
+############################
+##### SHARKED SPLADDER #####
+############################
+rule prepare_sharked_spladder_ctrlbam_list:
+    # Creates the file containing the paths to ctrl bams (format required by spladder)
+    input:
+        expand(pjoin(output_fold, "sharked_STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = ctrl_samples)
+    output:
+        pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "ctrlbam_list.spladder.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /\\n/g' > {output}
+        """
+
+rule prepare_sharked_spladder_kdbam_list:
+    # Creates the file containing the paths to kd bams (format required by spladder)
+    input:
+        expand(pjoin(output_fold, "sharked_STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = kd_samples)
+    output:
+        pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "kdbam_list.spladder.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /\\n/g' > {output}
+        """
+
+rule prepare_sharked_spladder_bam_list:
+    # Creates the file containing the paths to all bams (format required by spladder)
+    input:
+        expand(pjoin(output_fold, "sharked_STAR", "SAD{{sparsity}}", "{sample_idx}", "Aligned.sortedByCoord.out.bam"),
+               sample_idx = ctrl_samples + kd_samples)
+    output:
+        pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "bam_list.spladder.txt")
+    threads: 1
+    shell:
+        """
+        echo {input} | sed 's/ /\\n/g' > {output}
+        """
+
+rule sharked_spladder_difftest_step1:
+    # Runs spladder on all bams for differential analysis - Step 1
+    input:
+        gtf = full_annotation,
+        bam_list = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "bam_list.spladder.txt")
+    output:
+        pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest", "merge_graphs_exon_skip_C3.pickle")
+    params:
+        out_fold = pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest")
+    threads: 4
+    log:
+        out = pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest.1.log"),
+        time = pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest.1.time")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} spladder build --bams {input.bam_list} --annotation {input.gtf} --outdir {params.out_fold} --parallel {threads} -n 101 --output-txt &> {log.out}
+        """
+
+rule sharked_spladder_difftest_step2:
+    # Runs spladder on all bams for differential analysis - Step 2
+    input:
+        spladder_step1_out = pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest", "merge_graphs_exon_skip_C3.pickle"),
+        gtf = full_annotation,
+        ctrlbam_list = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "ctrlbam_list.spladder.txt"),
+        kdbam_list = pjoin(output_fold, "sharked_STAR", "SAD{sparsity}", "kdbam_list.spladder.txt")
+    output:
+        pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest", "testing", "test_results_C3_exon_skip.tsv")
+    params:
+        out_fold = pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest")
+    threads: 4
+    log:
+        out = pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest.2.log"),
+        time = pjoin(output_fold, "sharked_spladder", "SAD{sparsity}", "difftest.2.time")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} spladder test --conditionA {input.ctrlbam_list} --conditionB {input.kdbam_list} --outdir {params.out_fold} --parallel {threads} -n 101 &>> {log.out}
+        """
