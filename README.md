@@ -5,6 +5,8 @@ This repository contains the instructions to reproduce the experiments performed
 * [genel_samples](#genel_samples): experiments with different sample sizes and clustering the gene by length (simulated data)
 * [asquant](#asquant): experiments on alternative splicing events quantification (real data)
 
+An exploratory analysis about the relationship between the kmers uniqueness and the accuracy of shark is available [here](#uniqueness-analysis).
+
 ### Setup
 
 To facilitate the replicability of our experiments, we provide a conda environment (`environment.yml`). To activate it, clone the repo, move to it, and run:
@@ -129,6 +131,6 @@ Then run `snakemake -j {threads}` to produce:
 * `{root_fold}/output/results.005.txt`
 * `{root_fold}/output/results.100.txt`
 
-### uniqness analysis
+### uniqueness analysis
 
-Either load the environment from the binder folder and execute the notebook under the `uniqness_analysis` directory or click on the following link to run the notebook on mybinder.org [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/AlgoLab/shark_experiments/master)
+Either load the environment from the binder folder and execute the notebook under the `uniqness_analysis` directory or click on the following link to run the notebook on mybinder.org [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/AlgoLab/shark_experiments/master). A non-interactive preview is available [here](uniqness_analysis/notebook.ipynb).
