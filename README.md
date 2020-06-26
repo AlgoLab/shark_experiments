@@ -24,7 +24,7 @@ make install
 **Note:** adding spladder to your `$PATH` is really important. If you don't do that, the asquant experiments will fail.
 
 ### paramtest
-Download the archive from [...], unzip it and set the root in the `paramtest/config.yaml` using the path to the extracted folder (should be something like `/.../paramtest/`). Run `snakemake -n` and you should see something like:
+Download the archive from [this link](https://drive.google.com/file/d/1D4BtTfhE8RLyBA2Y3v-epJGuP-x-mXmf/view), unzip it and set the root in the `paramtest/config.yaml` using the path to the extracted folder (should be something like `/.../paramtest/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
@@ -41,7 +41,7 @@ Then run `snakemake -j {threads}` to produce:
 * `{root_fold}/output/average_results.csv`
 
 ### panelsize
-Download the archive from [...], unzip it and set the root in the `panelsize/config.yaml` using the path to the extracted folder (should be something like `/.../panelsize/`). Run `snakemake -n` and you should see something like:
+Download the archive from [this link](https://drive.google.com/file/d/14oO2O6p9oAmt8ejvuNvNCqtZhbmCRx3F/view), unzip it and set the root in the `panelsize/config.yaml` using the path to the extracted folder (should be something like `/.../panelsize/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
@@ -58,7 +58,7 @@ Then run `snakemake -j {threads}` to produce:
 * `{root_fold}/output/multi.csv`
 
 ### genel_samples
-Download the archive from [...], unzip it and set the root in the `genel_samples/config.yaml` using the path to the extracted folder (should be something like `/.../genel_samples/`). Run `snakemake -n` and you should see something like:
+Download the archive from [this link](https://drive.google.com/file/d/1YxJvqeMacMLoRdXlw_7Tw7tsMwMpPvp1/view), unzip it and set the root in the `genel_samples/config.yaml` using the path to the extracted folder (should be something like `/.../genel_samples/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
@@ -75,7 +75,7 @@ Then run `snakemake -j {threads}` to produce:
 * `{root_fold}/output/results.csv`
 
 ### asquant
-Download the archive from [...], unzip it and set the root in the `asquant/config.yaml` using the path to the extracted folder (should be something like `/.../asquant/`). Run `snakemake -n` and you should see something like:
+Download the archive from [this link](https://drive.google.com/file/d/1xW5JxKH1OL5dWDcrOPFGW9l40tEjHHph/view), unzip it and set the root in the `asquant/config.yaml` using the path to the extracted folder (should be something like `/.../asquant/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
@@ -131,4 +131,4 @@ Then run `snakemake -j {threads}` to produce:
 
 ### uniqness analysis
 
-Either load the environment from the binder folder and execute the notebook under the uniqness_analysis directory or click on the following link to run the notebook on mybinder.org [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/AlgoLab/shark_experiments/master)
+Either load the environment from the binder folder and execute the notebook under the `uniqness_analysis` directory or click on the following link to run the notebook on mybinder.org [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/AlgoLab/shark_experiments/master)
