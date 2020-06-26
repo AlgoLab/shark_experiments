@@ -1,8 +1,8 @@
 # shark_experiments
 
 * `paramtest`: experiments to test `shark` parameters
-* `genel_samples`: experiments with different sample sizes and clustering the gene by length
 * `panelsize`: experiments with different sized gene panels
+* `genel_samples`: experiments with different sample sizes and clustering the gene by length
 * `asquant`: experiments on alternative splicing events quantification
 
 ### Dependencies:
@@ -30,37 +30,24 @@ make install
 ```
 
 ### paramtest
-Download the archive, unzip it and set the root in the `paramtest/config.yaml` using the path to the extracted folder. Run `snakemake -n` and then `snakemake -j 16`.
+Download the archive from [...], unzip it and set the root in the `paramtest/config.yaml` using the path to the extracted folder (should be something like `/.../paramtest/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
         1200    check_shark
         10      combine_results
         1       comp_average
+        10      index_gtf
         1       run
         1200    shark
-        2412
+        2422
 ```
 
-Output: `{root_fold}/output/average_results.csv`
-
-### genel_samples
-Download the archive, unzip it and set the root in the `genel_samples/config.yaml` using the path to the extracted folder. Run `snakemake -n` and then `snakemake -j 16`.
-```
-Job counts:
-        count   jobs
-        360     check_shark
-        1       combine_results
-        1       run
-        360     shark
-        9       split_sample
-        731
-```
-
-Output: `{root_fold}/output/results.csv`
+Then run `snakemake -j {threads}` to produce:
+* `{root_fold}/output/average_results.csv`
 
 ### panelsize
-Download the archive, unzip it and set the root in the `panelsize/config.yaml` using the path to the extracted folder. Run `snakemake -n` and then `snakemake -j 16`.
+Download the archive from [...], unzip it and set the root in the `panelsize/config.yaml` using the path to the extracted folder (should be something like `/.../panelsize/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
@@ -72,10 +59,29 @@ Job counts:
         38
 ```
 
-Output: `{root_fold}/output/{single,multi}.csv`
+Then run `snakemake -j {threads}` to produce:
+* `{root_fold}/output/single.csv`
+* `{root_fold}/output/multi.csv`
+
+### genel_samples
+Download the archive from [...], unzip it and set the root in the `genel_samples/config.yaml` using the path to the extracted folder (should be something like `/.../genel_samples/`). Run `snakemake -n` and you should see something like:
+```
+Job counts:
+        count   jobs
+        360     check_shark
+        1       combine_results
+        40      index_gtf
+        1       run
+        360     shark
+        9       split_sample
+        771
+```
+
+Then run `snakemake -j {threads}` to produce:
+* `{root_fold}/output/results.csv`
 
 ### asquant
-Download the archive, unzip it and set the root in the `asquant/config.yaml` using the path to the extracted folder. Run `snakemake -n` and then `snakemake -j 16`.
+Download the archive from [...], unzip it and set the root in the `asquant/config.yaml` using the path to the extracted folder (should be something like `/.../asquant/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
@@ -124,12 +130,10 @@ Job counts:
         245
 ```
 
-Output:
-```
-{root_fold}/output/resources.txt
-{root_fold}/output/results.005.txt
-{root_fold}/output/results.100.txt
-```
+Then run `snakemake -j {threads}` to produce:
+* `{root_fold}/output/resources.txt`
+* `{root_fold}/output/results.005.txt`
+* `{root_fold}/output/results.100.txt`
 
 ### uniqness analysis
 

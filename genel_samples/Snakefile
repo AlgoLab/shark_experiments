@@ -7,13 +7,6 @@ root_fold = config["root"]
 in_fold = pjoin(root_fold, "input")
 out_fold = pjoin(root_fold, "output")
 
-"""
-Input:
-chr1_17_21.fa
-chr1_17_21.gtf
-samples/
-"""
-
 reference = pjoin(in_fold, "chr1_17_21.fa")
 annotation = pjoin(in_fold, "chr1_17_21.gtf")
 samples_fold = pjoin(in_fold, "samples")
@@ -30,6 +23,69 @@ rule run:
     input:
         pjoin(out_fold, "results.csv")
 
+rule split_sample:
+    # Split flux sample into paired-end
+    input:
+        pjoin(samples_fold, "{sample}.fastq")
+    output:
+        fq1 = pjoin(samples_fold, "{sample}_1.fastq"),
+        fq2 = pjoin(samples_fold, "{sample}_2.fastq")
+    shell:
+        """
+        python3 split_sample.py {input}
+        """
+        
+rule shark:
+    # Run shark
+    input:
+        gene_seqs = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "genes.fa"),
+        fq1 = pjoin(samples_fold, "{sample}_1.fastq"),
+        fq2 = pjoin(samples_fold, "{sample}_2.fastq")
+    output:
+        ssv = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.ssv"),
+        fq1 = temp(pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}_1.fq")),
+        fq2 = temp(pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}_2.fq"))
+    log:
+        out = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.log"),
+        time = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.time")
+    threads: 4
+    shell:
+        """
+        /usr/bin/time -v -o {log.time} shark -r {input.gene_seqs} -1 {input.fq1} -2 {input.fq2} -k 17 -c 0.6 -q 10 -b 1 -s -t {threads} -o {output.fq1} -p {output.fq2} > {output.ssv} 2> {log.out}
+        """
+
+rule check_shark:
+    # Check shark output (compute precision/recall)
+    input:
+        ssv = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.ssv"),
+        bed = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "{sample}.bed"),
+        gtf = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "annotation.gtf"),
+        gtf_db = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "annotation.gtf.db")
+    output:
+        csv = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.csv")
+    shell:
+        """
+        python3 ../scripts/check_shark.py {input.ssv} {input.bed} {input.gtf} 1 > {output.csv}
+        """
+
+rule combine_results:
+    # Combine the results of the a run in a single csv
+    input:
+        expand(pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.csv"),
+               sample = samples,
+               quartile = quartiles,
+               sim_n = list(range(1,n_simulations+1)))
+    params:
+        wild_input = pjoin(out_fold, "*", "*", "*.csv")
+    output:
+        csv = pjoin(out_fold, "results.csv")
+    shell:
+        """
+        python3 combine_results.py "{params.wild_input}" > {output.csv}
+        """
+
+### COMMENTED RULES ARE USED TO GENERATE RANDOM INSTANCES (RUNS) ###
+
 # rule extract_annotation:
 #     input:
 #         gtf = annotation
@@ -42,15 +98,16 @@ rule run:
 #         python3 extract_random_genes.py {input.gtf} {params.q} {n_genes} > {output}
 #         """
 
-# rule index_gtf:
-#     input:
-#         gtf = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "annotation.gtf")
-#     output:
-#         gtf_db = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "annotation.gtf.db")
-#     shell:
-#         """
-#         python3 ../scripts/index_gtf.py {input.gtf}
-#         """
+rule index_gtf:
+    # Index gtf
+    input:
+        "{fpath}.gtf"
+    output:
+        "{fpath}.gtf.db"
+    shell:
+        """
+        python3 ../scripts/index_gtf.py {input}
+        """
         
 # rule extract_truth:
 #     input:
@@ -74,60 +131,3 @@ rule run:
 #         """
 #         bash ../scripts/extract_gene_seqs.sh {input.fa} {input.gtf} 200 > {output}
 #         """
-
-rule split_sample:
-    input:
-        pjoin(samples_fold, "{sample}.fastq")
-    output:
-        fq1 = pjoin(samples_fold, "{sample}_1.fastq"),
-        fq2 = pjoin(samples_fold, "{sample}_2.fastq")
-    shell:
-        """
-        python3 split_sample.py {input}
-        """
-        
-rule shark:
-    input:
-        gene_seqs = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "genes.fa"),
-        fq1 = pjoin(samples_fold, "{sample}_1.fastq"),
-        fq2 = pjoin(samples_fold, "{sample}_2.fastq")
-    output:
-        ssv = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.ssv"),
-        fq1 = temp(pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}_1.fq")),
-        fq2 = temp(pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}_2.fq"))
-    log:
-        out = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.log"),
-        time = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.time")
-    threads: 4
-    shell:
-        """
-        /usr/bin/time -v -o {log.time} shark -r {input.gene_seqs} -1 {input.fq1} -2 {input.fq2} -k 17 -c 0.6 -q 10 -b 1 -s -t {threads} -o {output.fq1} -p {output.fq2} > {output.ssv} 2> {log.out}
-        """
-
-rule check_shark:
-    input:
-        ssv = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.ssv"),
-        bed = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "{sample}.bed"),
-        gtf = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "annotation.gtf"),
-        gtf_db = pjoin(gen_fold, "q{quartile}", "sim{sim_n}", "annotation.gtf.db")
-    output:
-        csv = pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.csv")
-    shell:
-        """
-        python3 ../scripts/check_shark.py {input.ssv} {input.bed} {input.gtf} 1 > {output.csv}
-        """
-
-rule combine_results:
-    input:
-        expand(pjoin(out_fold, "{sample}", "q{quartile}", "sim{sim_n}.csv"),
-               sample = samples,
-               quartile = quartiles,
-               sim_n = list(range(1,n_simulations+1)))
-    params:
-        wild_input = pjoin(out_fold, "*", "*", "*.csv")
-    output:
-        csv = pjoin(out_fold, "results.csv")
-    shell:
-        """
-        python3 combine_results.py "{params.wild_input}" > {output.csv}
-        """

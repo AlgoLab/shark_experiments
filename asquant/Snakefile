@@ -11,8 +11,8 @@ reference = pjoin(input_fold, "Homo_sapiens.GRCh37.dna.primary_assembly.fa")
 full_annotation = pjoin(input_fold, "Homo_sapiens.GRCh37.87.gtf")
 transcripts = pjoin(input_fold, "Homo_sapiens.GRCh37.cdna.all.fa")
 
-rtpcr_genes_csv = pjoin(input_fold, "RTPCR_genes.csv")
-rtpcr_genes_list = pjoin(input_fold, "RTPCR_genes_list.txt")
+rtpcr_genes_csv = pjoin(input_fold, "RTPCR_genes.csv") # From suppa2 supplementary xls, modified by searching missing genes in ensembl
+rtpcr_genes_list = pjoin(input_fold, "RTPCR_genes_list.txt") # From RTPCR_genes.csv via 2 cuts
 rtpcr_annotation = full_annotation[:-4] + ".rtpcr.gtf"
 rtpcr_seqs = pjoin(input_fold, "rtpcr_genes.seqs.fa")
 
@@ -20,30 +20,10 @@ rtpcr_genes = []
 for line in open(rtpcr_genes_list, 'r'):
     rtpcr_genes.append(line.strip("\n"))
 
+# Samples downloaded from SRA
 ctrl_samples = ["SRR1513329", "SRR1513330", "SRR1513331"]
 kd_samples = ["SRR1513332", "SRR1513333", "SRR1513334"]
 star_genomeSAsparseD = [1,2,4,8]
-
-# Initial files:
-# input_fold/
-# |-- Homo_sapiens.GRCh37.dna.primary_assembly.fa
-# |-- Homo_sapiens.GRCh37.87.gtf
-# |-- Homo_sapiens.GRCh37.cdna.all.fa
-# |-- RTPCR_genes.csv (from suppa2 supplementary xls, modified by searching missing genes in ensembl)
-# |-- RTPCR_genes_list.txt (from RTPCR_genes.csv via 2 cuts)
-# '-- samples
-#     |-- SRR1513329_1.fastq.gz
-#     |-- SRR1513329_2.fastq.gz
-#     |-- SRR1513330_1.fastq.gz
-#     |-- SRR1513330_2.fastq.gz
-#     |-- SRR1513331_1.fastq.gz
-#     |-- SRR1513331_2.fastq.gz
-#     |-- SRR1513332_1.fastq.gz
-#     |-- SRR1513332_2.fastq.gz
-#     |-- SRR1513333_1.fastq.gz
-#     |-- SRR1513333_2.fastq.gz
-#     |-- SRR1513334_1.fastq.gz
-#     '-- SRR1513334_2.fastq.gz
 
 rule run:
     input:
@@ -83,9 +63,8 @@ rule run:
 #########################
 ##### PREPROCESSING #####
 #########################
-# FIXME: to create the RTPCR we first split it and then we merge the files. We can do it just grepping the gene names
+# FIXME: to create the RTPCR we first split the full annotation and then we merge the files. We can do it by grepping the gene names
 rule split_gtf:
-    # Split gtf for ASGAL
     input:
         gtf = full_annotation
     output:
@@ -109,7 +88,7 @@ rule index_gene_gtf:
         python3 ../scripts/index_gtf.py {input}
         """
 
-# FIXME: check if sort works as expected
+# TODO: check if sort works as expected - it seems so
 rule create_rtpcr_annotation:
     # Combine rtpcr gtfs
     input:
@@ -148,19 +127,6 @@ rule create_rtpcr_annotation:
 #     shell:
 #         """
 #         samtools faidx {input.fa} {params.chr} > {output}
-#         """
-
-# rule link_fasta:
-#     # Links the chromosome fasta of the gene to the gene reference (ASGAL)
-#     input:
-#         gene_gtf = pjoin(input_fold, "rtpcr_genes", "{gene_idx}.gtf"),
-#         refs = expand(pjoin(input_fold, "chr{chr_idx}.fa"), chr_idx = list(range(1,23)) + ["X", "Y"])
-#     output:
-#         gene_fa = pjoin(input_fold, "rtpcr_genes", "{gene_idx}.fa")
-#     threads: 1
-#     shell:
-#         """
-#         chr=$(head -1 {input.gene_gtf} | cut -f 1) ; ln -s {input_fold}/chr${{chr}}.fa {output.gene_fa}
 #         """
 
 rule fix_transcripts_for_suppa:
@@ -271,7 +237,6 @@ rule salmon_quant:
         """
         /usr/bin/time -vo {log.time} salmon quant -p {threads} -l A -i {params.index_prefix} -1 {input.fq_1} -2 {input.fq_2} -o {params.out_prefix} --no-version-check --validateMappings --writeMappings={output.sam} &> {log.out}
         """
-# /usr/bin/time -vo {log.time} salmon quant -p {threads} -l ISF -i {params.index_prefix} -1 {input.fq_1} -2 {input.fq_2} -o {params.out_prefix} --writeMappings={output.sam} --writeUnmappedNames &> {log.out}
 
 rule salmon_sam_to_bam:
     input:
@@ -305,7 +270,7 @@ rule suppa_compute_tmp:
         /usr/bin/time -vo {log.time} multipleFieldSelection.py -i {input.salmon_quants} -k 1 -f 4 -o {output.iso_tmp} &> {log.out}
         """
 
-# FIXME: gtf was "formatted", ie only exons
+# FIXME: gtf was "formatted", ie only exons - it works anyway
 rule suppa_generate_events:
     # Generates events from annotation
     input:

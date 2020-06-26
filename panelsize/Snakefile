@@ -7,7 +7,10 @@ in_fold = pjoin(root, "input")
 out_fold = pjoin(root, "output")
 
 gene_sizes = [100, 250, 500, 1000, 2500, 5000, 10000]
-bf_sizes = {"100":1, "250":1, "500":1, "1000":2, "2500":2, "5000":4, "10000":4}
+# bf_sizes = {"100":1, "250":1, "500":1, "1000":2, "2500":2, "5000":4, "10000":4}
+
+# Genes for each panel were randomly choosen from the chr1_17_21.gtf (see paramtest exp)
+# The sample is the same used in the paramtest exp
 
 rule run:
     input:
@@ -15,6 +18,7 @@ rule run:
                mode = ["single", "multi"])
 
 rule shark:
+    # Run shark
     input:
         gene_seqs = pjoin(in_fold, "random_genes.{n}.fa"),
         sample = pjoin(in_fold, "sample_10M.fastq")
@@ -34,16 +38,18 @@ rule shark:
         """
 
 rule index_gtf:
+    # Index gtf
     input:
-        gtf = "{f}.gtf"
+        "{fpath}.gtf"
     output:
-        gtf_db = "{f}.gtf.db"
+        "{fpath}.gtf.db"
     shell:
         """
-        python3 ../scripts/index_gtf.py {input.gtf}
+        python3 ../scripts/index_gtf.py {input}
         """
 
 rule check_shark:
+    # Check shark output (compute precision/recall)
     input:
         ssv = pjoin(out_fold, "{mode}", "{n}.ssv"),
         bed = pjoin(in_fold, "random_genes.{n}.truth.bed"),
@@ -57,6 +63,7 @@ rule check_shark:
         """
 
 rule combine_results:
+    # Combine results in a single csv
     input:
         expand(pjoin(out_fold, "{{mode}}", "{n}.res"),
                n = gene_sizes)
