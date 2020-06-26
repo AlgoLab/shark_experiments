@@ -130,3 +130,7 @@ Output:
 {root_fold}/output/results.005.txt
 {root_fold}/output/results.100.txt
 ```
+
+### uniqness analysis
+
+Either load the environment from the binder folder and execute the notebook under the uniqness_analysis directory or click on the following link to run the notebook on mybinder.org [![Binder](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/AlgoLab/shark_experiments/master)
