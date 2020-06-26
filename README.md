@@ -1,33 +1,27 @@
-# shark_experiments
+# Shark - Experiments
+This repository contains the instructions to reproduce the experiments performed in the shark paper:
+* [paramtest](#paramtest): experiments to test shark parameters (simulated data)
+* [panelsize](#panelsize): experiments with different sized gene panels (simulated data)
+* [genel_samples](#genel_samples): experiments with different sample sizes and clustering the gene by length (simulated data)
+* [asquant](#asquant): experiments on alternative splicing events quantification (real data)
 
-* `paramtest`: experiments to test `shark` parameters
-* `panelsize`: experiments with different sized gene panels
-* `genel_samples`: experiments with different sample sizes and clustering the gene by length
-* `asquant`: experiments on alternative splicing events quantification
+### Setup
 
-### Dependencies:
-* python3-biopython
-* gffutils
-* samtools
-* bedops
-* bedtools
-* R
-* shark
-* STAR
-* rMATS
-* suppa2
-* spladder (not on conda)
-
+To facilitate the replicability of our experiments, we provide a conda environment (`environment.yml`). To activate it, clone the repo, move to it, and run:
 ```bash
-conda install python=3.7 snakemake-minimal biopython gffutils bedops bedtools R samtools pysam shark STAR rmats suppa salmon numpy matplotlib scipy intervaltree h5py pysam statsmodels
-
-git clone git@github.com:AlgoLab/shark_experiments.git
+git clone https://github.com/AlgoLab/shark_experiments.git
 cd shark_experiments
 conda env create -f environment.yml
+```
+This environment contains all the needed softwares and libraries except for the [spladder](https://github.com/ratschlab/spladder) tool (it's not available on conda). To install it:
+```bash
 git clone https://github.com/ratschlab/spladder.git
 cd spladder
+git checkout 324d45c # This is the version we used
 make install
+# add spladder bin to you $PATH variable
 ```
+**Note:** adding spladder to your `$PATH` is really important. If you don't do that, the asquant experiments will fail.
 
 ### paramtest
 Download the archive from [...], unzip it and set the root in the `paramtest/config.yaml` using the path to the extracted folder (should be something like `/.../paramtest/`). Run `snakemake -n` and you should see something like:
