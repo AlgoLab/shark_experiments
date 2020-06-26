@@ -7,15 +7,15 @@ This repository contains the instructions to reproduce the experiments performed
 
 An exploratory analysis about the relationship between the kmers uniqueness and the accuracy of shark is available [here](#uniqueness-analysis).
 
-### Setup
+## Setup
 
-To facilitate the replicability of our experiments, we provide a conda environment (`environment.yml`). To activate it, clone the repo, move to it, and run:
+To ensure the reproduction of our experiments, we provide a conda environment (`environment.yml`). To activate it, execute the folling command to clone the repo, move to the cloned repo, and install the dependencies:
 ```bash
 git clone https://github.com/AlgoLab/shark_experiments.git
 cd shark_experiments
 conda env create -f environment.yml
 ```
-This environment contains all the needed softwares and libraries except for the [spladder](https://github.com/ratschlab/spladder) tool (it's not available on conda). To install it:
+This environment contains all the needed softwares and libraries except for [spladder](https://github.com/ratschlab/spladder) (it's not available on conda). To install it:
 ```bash
 git clone https://github.com/ratschlab/spladder.git
 cd spladder
@@ -24,6 +24,9 @@ make install
 # add spladder bin to you $PATH variable
 ```
 **Note:** adding spladder to your `$PATH` is really important. If you don't do that, the asquant experiments will fail.
+
+
+## Experiment reproduction
 
 ### paramtest
 Download the archive from [this link](https://drive.google.com/file/d/1D4BtTfhE8RLyBA2Y3v-epJGuP-x-mXmf/view), unzip it and set the root in the `paramtest/config.yaml` using the path to the extracted folder (should be something like `/.../paramtest/`). Run `snakemake -n` and you should see something like:
