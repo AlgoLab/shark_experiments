@@ -3,8 +3,8 @@ configfile: "config.yaml"
 from os.path import join as pjoin
 
 root = config["root"]
-in_fold = pjoin(root, "input") # "/home/prj_gralign/data/shark_genesize_analysis/bigger_input"
-out_fold = pjoin(root, "output") # "/home/prj_gralign/data/shark_genesize_analysis/output_bf"
+in_fold = pjoin(root, "input")
+out_fold = pjoin(root, "output")
 
 gene_sizes = [100, 250, 500, 1000, 2500, 5000, 10000]
 bf_sizes = {"100":1, "250":1, "500":1, "1000":2, "2500":2, "5000":4, "10000":4}
