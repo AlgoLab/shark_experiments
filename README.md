@@ -77,8 +77,7 @@ Job counts:
 ```
 
 Then run `snakemake -j {threads}` to produce:
-* `{root_fold}/output/single.csv`
-* `{root_fold}/output/multi.csv`
+* `{root_fold}/output/results.csv`
 
 ### genel_samples
 Download the archive from [this link](https://drive.google.com/file/d/1YxJvqeMacMLoRdXlw_7Tw7tsMwMpPvp1/view), unzip it and set the root in the `genel_samples/config.yaml` using the path to the extracted folder (should be something like `/.../genel_samples/`). Run `snakemake -n` and you should see something like:
