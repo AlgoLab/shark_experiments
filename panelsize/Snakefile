@@ -10,35 +10,26 @@ gene_sizes = [100, 250, 500, 1000, 2500, 5000, 10000]
 # bf_sizes = {"100":1, "250":1, "500":1, "1000":2, "2500":2, "5000":4, "10000":4}
 
 # Genes for each panel were randomly choosen from the chr1_17_21.gtf (see paramtest exp)
+# 10000 genes panel -> 9403 genes (all genes from chr1,17,21)
 # The sample is the same used in the paramtest exp
 
 rule run:
     input:
-        expand(pjoin(out_fold, "{mode}.csv"),
-               mode = ["single", "multi"])
+        pjoin(out_fold, "results.csv")
 
-rule shark:
-    # Run shark
+
+### utils ###
+rule index_fa:
     input:
-        gene_seqs = pjoin(in_fold, "random_genes.{n}.fa"),
-        sample = pjoin(in_fold, "sample_10M.fastq")
+        "{fpath}.fa"
     output:
-        ssv = pjoin(out_fold, "{mode}", "{n}.ssv"),
-        fq = temp(pjoin(out_fold, "{mode}", "{n}.fq"))
-    params:
-        single_flag = lambda wildcards: "-s" if wildcards.mode == "single" else "",
-        bf = 1 # lambda wildcards: bf_sizes[wildcards.n]
-    threads: 4
-    log:
-        time = pjoin(out_fold, "{mode}", "{n}.time"),
-        out = pjoin(out_fold, "{mode}", "{n}.log")
+        "{fpath}.fa.fai"
     shell:
         """
-        /usr/bin/time -vo {log.time} shark -r {input.gene_seqs} -1 {input.sample} -k 17 -c 0.6 -q 10 -b {params.bf} {params.single_flag} -t {threads} -o {output.fq} > {output.ssv} 2> {log.out}
+        samtools faidx {input}
         """
 
 rule index_gtf:
-    # Index gtf
     input:
         "{fpath}.gtf"
     output:
@@ -48,31 +39,185 @@ rule index_gtf:
         python3 ../scripts/index_gtf.py {input}
         """
 
-rule check_shark:
-    # Check shark output (compute precision/recall)
+rule extract_cdnas:
     input:
-        ssv = pjoin(out_fold, "{mode}", "{n}.ssv"),
-        bed = pjoin(in_fold, "random_genes.{n}.truth.bed"),
-        gtf = pjoin(in_fold, "random_genes.{n}.gtf"),
-        gtf_db = pjoin(in_fold, "random_genes.{n}.gtf.db")
+        ref = pjoin(in_fold, "chr1_17_21.fa"),
+        ref_index = pjoin(in_fold, "chr1_17_21.fa.fai"),
+        anno = pjoin(in_fold, "random_genes.{n}.gtf")
     output:
-        csv = pjoin(out_fold, "{mode}", "{n}.res")
+        cdna_seqs = pjoin(in_fold, "random_genes.{n}.cdna.fa")
+    threads: 1
     shell:
         """
-        python3 ../scripts/check_shark.py {input.ssv} {input.bed} {input.gtf} 0 > {output.csv}
+        gffread -w {output.cdna_seqs} -g {input.ref} {input.anno}
         """
 
 rule combine_results:
     # Combine results in a single csv
     input:
-        expand(pjoin(out_fold, "{{mode}}", "{n}.res"),
-               n = gene_sizes)
+        shark_single = expand(pjoin(out_fold, "shark_single", "{n}.res"),
+                              n = gene_sizes),
+        shark_multi = expand(pjoin(out_fold, "shark_multi", "{n}.res"),
+                              n = gene_sizes),
+        rapmap = expand(pjoin(out_fold, "rapmap", "{n}.res"),
+                       n = gene_sizes),
+        pufferfish = expand(pjoin(out_fold, "pufferfish", "{n}.res"),
+                            n = gene_sizes)
     output:
-        pjoin(out_fold, "{mode}.csv")
+        pjoin(out_fold, "results.csv")
     params:
-        glob_path = pjoin(out_fold, "{mode}", "*.res")
+        shark_single_glob = pjoin(out_fold, "shark_single", "*.res"),
+        shark_multi_glob = pjoin(out_fold, "shark_multi", "*.res"),
+        rapmap_glob = pjoin(out_fold, "rapmap", "*.res"),
+        pufferfish_glob = pjoin(out_fold, "pufferfish", "*.res"),
     threads: 1
     shell:
         """
-        bash combine.sh "{params.glob_path}" | sort -n -k 1 > {output}
+        bash combine_shark.sh "{params.shark_single_glob}" > {output}
+        bash combine_shark.sh "{params.shark_multi_glob}" >> {output}
+        bash combine_rapmap.sh "{params.rapmap_glob}" >> {output}
+        bash combine_rapmap.sh "{params.pufferfish_glob}" >> {output}
+        head -1 {output} > {output}.tmp
+        grep -v "^Tool," {output} | sort -n -k 2 -t',' >> {output}.tmp
+        mv {output}.tmp {output}
+        """
+
+### SHARK ###
+rule shark:
+    input:
+        gene_seqs = pjoin(in_fold, "random_genes.{n}.fa"),
+        sample = pjoin(in_fold, "sample_10M.fastq")
+    output:
+        ssv = pjoin(out_fold, "shark_{mode}", "{n}.ssv"),
+        fq = temp(pjoin(out_fold, "shark_{mode}", "{n}.fq"))
+    params:
+        single_flag = lambda wildcards: "-s" if wildcards.mode == "single" else "",
+        bf = 1 # lambda wildcards: bf_sizes[wildcards.n]
+    threads: 4
+    log:
+        time = pjoin(out_fold, "shark_{mode}", "{n}.time"),
+        out = pjoin(out_fold, "shark_{mode}", "{n}.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} /data/yuri/shark-notbb/shark -r {input.gene_seqs} -1 {input.sample} -k 17 -c 0.6 -q 10 -b {params.bf} {params.single_flag} -t {threads} -o {output.fq} > {output.ssv} 2> {log.out}
+        """
+rule check_shark:
+    # Check shark output (compute precision/recall)
+    input:
+        ssv = pjoin(out_fold, "shark_{mode}", "{n}.ssv"),
+        bed = pjoin(in_fold, "random_genes.{n}.truth.bed"),
+        gtf = pjoin(in_fold, "random_genes.{n}.gtf"),
+        gtf_db = pjoin(in_fold, "random_genes.{n}.gtf.db")
+    output:
+        csv = pjoin(out_fold, "shark_{mode}", "{n}.res")
+    shell:
+        """
+        python3 ../scripts/check_shark.py {input.ssv} {input.bed} {input.gtf} 0 > {output.csv}
+        """
+
+### RAPMAP ###
+rule rapmap_index:
+    input:
+        gene_seqs = pjoin(in_fold, "random_genes.{n}.fa")
+    output:
+        index = pjoin(out_fold, "rapmap", "{n}_index", "hash.bin")
+    params:
+        index_prefix = pjoin(out_fold, "rapmap", "{n}_index", "")
+    threads: 4
+    log:
+        time = pjoin(out_fold, "rapmap", "{n}_index.time"),
+        out = pjoin(out_fold, "rapmap", "{n}_index.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} rapmap quasiindex --keepDuplicates -x {threads} -t {input} -i {params.index_prefix} &> {log.out}
+        """
+
+rule rapmap_map:
+    input:
+        index = pjoin(out_fold, "rapmap", "{n}_index", "hash.bin"),
+        sample = pjoin(in_fold, "sample_10M.fastq")
+    output:
+        sam = pjoin(out_fold, "rapmap", "{n}.sam")
+    params:
+        index_prefix = pjoin(out_fold, "rapmap", "{n}_index", "")
+    threads: 4
+    log:
+        time = pjoin(out_fold, "rapmap", "{n}_map.time"),
+        out = pjoin(out_fold, "rapmap", "{n}_map.log")
+    shell:
+        """
+        /usr/bin/time -v -o {log.time} rapmap quasimap -t {threads} -i {params.index_prefix} -r {input.sample} > {output} 2> {log.out}
+        """
+#-s
+
+rule check_rapmap:
+    input:
+        sam = pjoin(out_fold, "rapmap", "{n}.sam"),
+        bed = pjoin(in_fold, "random_genes.{n}.truth.bed"),
+        gtf = pjoin(in_fold, "random_genes.{n}.gtf"),
+        gtf_db = pjoin(in_fold, "random_genes.{n}.gtf.db")
+    output:
+        csv = pjoin(out_fold, "rapmap", "{n}.res")
+    shell:
+        """
+        python3 check_alignments_to_genes.py {input.sam} {input.bed} {input.gtf} > {output.csv}
+        """
+
+### PUFFERFISH ###
+rule create_puff_reference:
+    input:
+        gene_seqs = pjoin(in_fold, "random_genes.{n}.fa"),
+        cdna_seqs = pjoin(in_fold, "random_genes.{n}.cdna.fa")
+    output:
+        fa = pjoin(out_fold, "pufferfish", "genes_and_cdna.{n}.fa")
+    threads: 1
+    shell:
+        """
+        cat {input.cdna_seqs} {input.gene_seqs} > {output.fa}
+        """
+
+rule pufferfish_index:
+    input:
+        fa = pjoin(out_fold, "pufferfish", "genes_and_cdna.{n}.fa")
+    output:
+        index = pjoin(out_fold, "pufferfish", "{n}_index", "mphf.bin")
+    params:
+        index_prefix = pjoin(out_fold, "pufferfish", "{n}_index", "")
+    threads: 4
+    log:
+        time = pjoin(out_fold, "pufferfish", "{n}_index.time"),
+        out = pjoin(out_fold, "pufferfish", "{n}_index.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} pufferfish index -p {threads} -r {input.fa} -o {params.index_prefix} &> {log.out}
+        """
+
+rule pufferfish_align:
+    input:
+        index = pjoin(out_fold, "pufferfish", "{n}_index", "mphf.bin"),
+        sample = pjoin(in_fold, "sample_10M.fastq")
+    output:
+        sam = pjoin(out_fold, "pufferfish", "{n}.sam")
+    params:
+        index_prefix = pjoin(out_fold, "pufferfish", "{n}_index", "")
+    threads: 4
+    log:
+        time = pjoin(out_fold, "pufferfish", "{n}_map.time"),
+        out = pjoin(out_fold, "pufferfish", "{n}_map.log")
+    shell:
+        """
+        /usr/bin/time -vo {log.time} pufferfish align -t {threads} -m -i {params.index_prefix} --read {input.sample} -o {output.sam} &> {log.out}
+        """
+
+rule check_pufferfish:
+    input:
+        sam = pjoin(out_fold, "pufferfish", "{n}.sam"),
+        bed = pjoin(in_fold, "random_genes.{n}.truth.bed"),
+        gtf = pjoin(in_fold, "random_genes.{n}.gtf"),
+        gtf_db = pjoin(in_fold, "random_genes.{n}.gtf.db")
+    output:
+        csv = pjoin(out_fold, "pufferfish", "{n}.res")
+    shell:
+        """
+        python3 check_alignments_to_genes.py {input.sam} {input.bed} {input.gtf} > {output.csv}
         """

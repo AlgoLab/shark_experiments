@@ -1,7 +1,7 @@
 # Shark - Experiments
 This repository contains the instructions to reproduce the experiments performed in the shark paper:
 * [paramtest](#paramtest): experiments to test shark parameters (simulated data)
-* [panelsize](#panelsize): experiments with different sized gene panels (simulated data)
+* [panelsize](#panelsize): experiments with different sized gene panels and comparison with quasi-mappers and aligners (simulated data)
 * [genel_samples](#genel_samples): experiments with different sample sizes and clustering the gene by length (simulated data)
 * [asquant](#asquant): experiments on alternative splicing events quantification (real data)
 
@@ -15,15 +15,24 @@ git clone https://github.com/AlgoLab/shark_experiments.git
 cd shark_experiments
 conda env create -f environment.yml
 ```
-This environment contains all the needed softwares and libraries except for [spladder](https://github.com/ratschlab/spladder) (it's not available on conda). To install it:
+This environment contains all the needed softwares and libraries except for [spladder](https://github.com/ratschlab/spladder) and [pufferfish](https://github.com/COMBINE-lab/pufferfish) (they are not available on conda). To install them:
 ```bash
 git clone https://github.com/ratschlab/spladder.git
 cd spladder
 git checkout 324d45c # This is the version we used
 make install
 # add spladder bin to you $PATH variable
+
+git clone https://github.com/COMBINE-lab/pufferfish.git
+cd pufferfish
+git checkout 8c24fb1 # This is the version we used
+mkdir build
+cd build
+cmake ../
+make
+# add pufferfish bin to you $PATH variable
 ```
-**Note:** adding spladder to your `$PATH` is really important. If you don't do that, the asquant experiments will fail.
+**Note:** adding spladder and pufferfish to your `$PATH` is really important. If you don't do that, some of the experiments will fail.
 
 
 ## Experiment reproduction
@@ -50,12 +59,21 @@ Download the archive from [this link](https://drive.google.com/file/d/14oO2O6p9o
 ```
 Job counts:
         count   jobs
+        7       check_pufferfish
+        7       check_rapmap
         14      check_shark
-        2       combine_results
+        1       combine_results
+        7       create_puff_reference
+        7       extract_cdnas
+        1       index_fa
         7       index_gtf
+        7       pufferfish_align
+        7       pufferfish_index
+        7       rapmap_index
+        7       rapmap_map
         1       run
         14      shark
-        38
+        94
 ```
 
 Then run `snakemake -j {threads}` to produce:
