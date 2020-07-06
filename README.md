@@ -55,7 +55,7 @@ Then run `snakemake -j {threads}` to produce:
 * `{root_fold}/output/average_results.csv`
 
 ### panelsize
-Download the archive from [this link](https://drive.google.com/file/d/14oO2O6p9oAmt8ejvuNvNCqtZhbmCRx3F/view), unzip it and set the root in the `panelsize/config.yaml` using the path to the extracted folder (should be something like `/.../panelsize/`). Run `snakemake -n` and you should see something like:
+Download the archive from [this link](https://drive.google.com/file/d/18vvLqYktF0XyhtfCMqyhLFinGd_P4Rjx/view?usp=sharing), unzip it and set the root in the `panelsize/config.yaml` using the path to the extracted folder (should be something like `/.../panelsize/`). Run `snakemake -n` and you should see something like:
 ```
 Job counts:
         count   jobs
