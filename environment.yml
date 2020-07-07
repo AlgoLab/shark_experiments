@@ -103,7 +103,7 @@ dependencies:
   - make=4.3=h516909a_0
   - matplotlib=3.2.2=0
   - matplotlib-base=3.2.2=py37h30547a4_0
-  - nbformat=5.0.6=py_0
+  - nbformat=5.0.7=py_0
   - ncurses=6.1=hf484d3e_1002
   - nspr=4.26=he1b5a44_0
   - nss=3.47=he751ad9_0
@@ -162,7 +162,7 @@ dependencies:
   - scipy=1.4.1=py37ha3d9a3c_3
   - sed=4.7=h1bed415_1000
   - setuptools=49.1.0=py37hc8dfbb8_0
-  - shark=1.1.0=he513fc3_0
+  - shark=1.2.0=he513fc3_0
   - simplejson=3.17.0=py37h8f50634_1
   - six=1.15.0=pyh9f0ad1d_0
   - smmap=3.0.4=pyh9f0ad1d_0
